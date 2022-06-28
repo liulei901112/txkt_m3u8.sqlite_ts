@@ -34,9 +34,9 @@ namespace txkt_m3u8.sqlite_ts
 		/// <returns></returns>        
 		public static bool IsExistsDateBase(string path)
 		{
-			if (Path.GetExtension(path).Equals(".db"))
+			if (Path.GetExtension(path).Equals(".sqlite"))
 			{
-				throw new SQLiteException("不是.db后缀,你查什么!!!");
+				throw new SQLiteException("不是.sqlite后缀,你查什么!!!");
 			}
 			return File.Exists(path);
 		}
