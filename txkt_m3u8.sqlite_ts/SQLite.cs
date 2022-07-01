@@ -3,12 +3,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.SQLite;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 namespace txkt_m3u8.sqlite_ts
 {
-	public class SQLite : IDisposable
+    public class SQLite : IDisposable
 	{
 		private SQLiteConnection _connection;
 		private SQLiteDataReader _reader;
