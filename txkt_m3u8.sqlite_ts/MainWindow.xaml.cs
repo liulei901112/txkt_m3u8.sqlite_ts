@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Windows;
@@ -104,12 +105,24 @@ namespace txkt_m3u8.sqlite_ts
             // 遍历文件
             int index = 1;
             int total = filePaths.Length;
+            RefreshTotalProgress(index, total);
             foreach (string filePath in filePaths)
             {
                 Log("[+]" + filePath);
-                RefreshTotalProgress(index, total);
+
+                // 读取数据库
+                SQLite sqlite = new SQLite(filePath);
+                string[] metadatas = sqlite.GetRows("metadata", "value");
+                foreach (string metadata in metadatas)
+                {
+                    // 解析token
+                    Base64.Decode(metadata);
+                    // BASE64解析
+                    // 封装数据
+                    // 获取caches表数据分片并解析
+                    Log(metadata);
+                }
                 index++;
-                Thread.Sleep(TimeSpan.FromSeconds(1));
             }
         }
 
