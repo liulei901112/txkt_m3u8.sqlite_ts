@@ -14,21 +14,68 @@ namespace txkt_m3u8.sqlite_ts
         /// <summary>
         /// 解码
         /// </summary>
-        /// <param name="text"></param>
+        /// <param name="base64"></param>
         /// <returns></returns>
-        public static string Decode(string text)
+        public static string Decode(string base64)
         {
-            return null;
+            return Decode(base64, Encoding.UTF8);
+        }
+
+        /// <summary>
+        /// 解码
+        /// </summary>
+        /// <param name="base64"></param>
+        /// <param name="encoding"></param>
+        /// <returns></returns>
+        public static string Decode(string base64, Encoding encoding)
+        {
+            string dummyData = base64.Trim().Replace("%", "").Replace(",", "").Replace(" ", "+");
+            if (dummyData.Length % 4 > 0)
+            {
+                dummyData = dummyData.PadRight(dummyData.Length + 4 - dummyData.Length % 4, '=');
+            }
+            string text = string.Empty;
+            byte[] bytes = Convert.FromBase64String(dummyData);
+            try
+            {
+                text = encoding.GetString(bytes);
+            }
+            catch
+            {
+                text = base64;
+            }
+            return text;
         }
 
         /// <summary>
         /// 编码
         /// </summary>
-        /// <param name="text"></param>
+        /// <param name="source"></param>
         /// <returns></returns>
-        public static string Encode(string text)
+        public static string Encode(string source)
         {
-            return null;
+            return Encode(source, Encoding.UTF8);
+        }
+
+        /// <summary>
+        /// 编码
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="encoding"></param>
+        /// <returns></returns>
+        public static string Encode(string source, Encoding encoding)
+        {
+            string text = string.Empty;
+            byte[] bytes = encoding.GetBytes(source);
+            try
+            {
+                text = Convert.ToBase64String(bytes);
+            }
+            catch
+            {
+                text = source;
+            }
+            return text;
         }
     }
 }

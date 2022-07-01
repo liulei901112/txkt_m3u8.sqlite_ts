@@ -78,13 +78,13 @@ namespace txkt_m3u8.sqlite_ts
 		/// <param name="path">目录</param>        
 		public static void CreateDateBase(string path)
 		{
-			if (Path.GetExtension(path).Equals(".db"))
+			if (Path.GetExtension(path).Equals(".sqlite"))
 			{
 				SQLiteConnection.CreateFile(path);
 			}
 			else
 			{
-				throw new Exception("要创建数据库，则文件后缀必须为.db");
+				throw new Exception("要创建数据库，则文件后缀必须为.sqlite");
 			}
 		}
 		// endregion        
@@ -126,7 +126,7 @@ namespace txkt_m3u8.sqlite_ts
 		{
 			if (File.Exists(path))
 			{
-				if (Path.GetExtension(path).Equals(".db"))
+				if (Path.GetExtension(path).Equals(".sqlite"))
 				{
 					File.Delete(path);
 				}
