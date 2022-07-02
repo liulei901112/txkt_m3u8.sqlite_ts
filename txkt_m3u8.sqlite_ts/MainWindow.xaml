@@ -42,5 +42,7 @@
         <Grid Margin="0,10,0,0" VerticalAlignment="Bottom" Background="#2196f3">
             <Label x:Name="WorkStatus" Content="就绪" Foreground="White"/>
         </Grid>
+        
+        <rubyer:MessageContainer Identifier="MessageContainers" Grid.ColumnSpan="2"/>
     </Grid>
 </Window>
