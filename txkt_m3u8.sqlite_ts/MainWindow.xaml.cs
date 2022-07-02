@@ -156,7 +156,7 @@ namespace txkt_m3u8.sqlite_ts
         }
 
         /// <summary>
-        /// 
+        /// 获取一个ts
         /// </summary>
         /// <param name="filePath"></param>
         /// <param name="uin"></param>
@@ -170,7 +170,7 @@ namespace txkt_m3u8.sqlite_ts
                 ShowStatus(msg);
                 log.Info(msg);
                 string cachesTableName = "caches";
-                int pageSize = 500;
+                int pageSize = 200;
                 int total = sqlite.GetRowsCount(cachesTableName);
                 int totalPage = (total + pageSize - 1) / pageSize;
                 int index = 1;
@@ -187,6 +187,8 @@ namespace txkt_m3u8.sqlite_ts
                         log.Info(msg);
                         index++;
                     }
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
             }
         }
