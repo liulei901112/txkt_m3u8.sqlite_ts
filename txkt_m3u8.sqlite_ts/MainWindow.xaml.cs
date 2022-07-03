@@ -5,13 +5,14 @@ using System.Data;
 using System.Data.SQLite;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Windows;
 using System.Windows.Controls;
+using txkt_m3u8.sqlite_ts.ViewModel;
 
 namespace txkt_m3u8.sqlite_ts
 {
@@ -22,9 +23,15 @@ namespace txkt_m3u8.sqlite_ts
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        /// <summary>
+        /// 数据模型
+        /// </summary>
+        private MainViewModel _viewModel = new MainViewModel();
+
         public MainWindow()
         {
             InitializeComponent();
+            this.DataContext = _viewModel;
         }
 
         /// <summary>
@@ -34,13 +41,6 @@ namespace txkt_m3u8.sqlite_ts
         /// <param name="e"></param>
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // 清空当前进度
-            this.CurrentProgress.Value = 0;
-            this.CurrentPercent.Text = "";
-            // 清空总进度
-            this.TotalProgress.Value = 0;
-            this.TotalPercent.Text = "";
-
             log.Info("初始化完成");
             ShowStatus("初始化完成");
         }
@@ -55,8 +55,8 @@ namespace txkt_m3u8.sqlite_ts
             System.Windows.Forms.FolderBrowserDialog openFileDialog = new System.Windows.Forms.FolderBrowserDialog(); // 选择文件夹
             if (openFileDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) // 注意，此处一定要手动引入System.Window.Forms空间，否则你如果使用默认的DialogResult会发现没有OK属性
             {
-                TargetFolder.Text = openFileDialog.SelectedPath;
-                log.Info("选定目标文件夹" + TargetFolder.Text);
+                _viewModel.TargetFolder = openFileDialog.SelectedPath;
+                log.Info("选定目标文件夹" + _viewModel.TargetFolder);
             }
         }
 
@@ -70,8 +70,8 @@ namespace txkt_m3u8.sqlite_ts
             System.Windows.Forms.FolderBrowserDialog openFileDialog = new System.Windows.Forms.FolderBrowserDialog();
             if (openFileDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
-                SourceFolder.Text = openFileDialog.SelectedPath;
-                log.Info("选定源文件夹" + SourceFolder.Text);
+                _viewModel.SourceFolder = openFileDialog.SelectedPath;
+                log.Info("选定源文件夹" + _viewModel.SourceFolder);
             }
         }
 
@@ -82,36 +82,28 @@ namespace txkt_m3u8.sqlite_ts
         /// <param name="e"></param>
         private void BeginConvert_Click(object sender, RoutedEventArgs e)
         {
-            string sourceFolder = SourceFolder.Text.Trim();
-            string targetFolder = TargetFolder.Text.Trim();
-            if (string.IsNullOrEmpty(sourceFolder))
+            if (string.IsNullOrEmpty(_viewModel.SourceFolder))
             {
                 log.Error("请输入或选择源文件夹");
                 MessageCore.ShowWarning("请输入或选择源文件夹");
                 return;
             }
-            if (!Directory.Exists(sourceFolder))
+            if (!Directory.Exists(_viewModel.SourceFolder))
             {
-                log.Error("源文件夹不存在 => " + sourceFolder);
+                log.Error("源文件夹不存在 => " + _viewModel.SourceFolder);
                 MessageCore.ShowWarning("源文件夹不存在");
                 return;
             }
 
-            if (string.IsNullOrEmpty(targetFolder))
+            if (string.IsNullOrEmpty(_viewModel.TargetFolder))
             {
                 log.Error("请输入或选择目标文件夹");
                 MessageCore.ShowWarning("请输入或选择目标文件夹");
                 return;
             }
-            if (!Directory.Exists(targetFolder))
-            {
-                log.Error("目标文件夹不存在 => " + targetFolder);
-                MessageCore.ShowWarning("目标文件夹不存在");
-                return;
-            }
 
             // 获取文件列表
-            string[] filePaths = Directory.GetFiles(sourceFolder, "*.m3u8.sqlite", SearchOption.AllDirectories);
+            string[] filePaths = Directory.GetFiles(_viewModel.SourceFolder, "*.m3u8.sqlite", SearchOption.AllDirectories);
             if (null == filePaths || filePaths.Length <= 0)
             {
                 log.Error("没有找到需要解码的文件（*.m3u8.sqlite）");
@@ -163,6 +155,8 @@ namespace txkt_m3u8.sqlite_ts
         /// <param name="termId"></param>
         private void FetchOneTs(string filePath, string uin, string termId)
         {
+            string fileName = Path.GetFileName(filePath);
+
             DateTime beginTime = DateTime.Now;
             using (SQLite sqlite = new SQLite(filePath))
             {
@@ -170,19 +164,45 @@ namespace txkt_m3u8.sqlite_ts
                 ShowStatus(msg);
                 log.Info(msg);
                 string cachesTableName = "caches";
-                int pageSize = 200;
                 int total = sqlite.GetRowsCount(cachesTableName);
-                int totalPage = (total + pageSize - 1) / pageSize;
                 int index = 1;
-                RefreshProgress(ProgressType.当前进度, 0, total);
+
+                RefreshProgress(ProgressType.当前进度, 0, total * 2);
+
+                List<long[]> tsIndex = new List<long[]>();
+                List<string> aesKeys = new List<string>();
+
+                int pageSize = 200;
+                int totalPage = (total + pageSize - 1) / pageSize;
                 for (int i = 1; i <= totalPage; i++)
                 {
-                    string limit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
-                    string[] caches = sqlite.GetRows(cachesTableName, "value", limit);
-                    foreach(string cache in caches)
+                    string pageLimit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
+                    List<object[]> caches = sqlite.GetRows(cachesTableName, "*", pageLimit);
+                    foreach (object[] cache in caches)
                     {
-                        RefreshProgress(ProgressType.当前进度, index, total);
-                        msg = string.Format("解析ts进度 [{0} / {1}] => {2}", index, total, filePath);
+                        string key = cache[0].ToString();
+                        object value = cache[1];
+
+                        Extend keyExtend = ExtractFromMetadata(key);
+                        string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
+
+                        if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
+                        { }
+                        else if (keyQueriesExtendKeys.Contains("edk"))
+                        {
+                            aesKeys.Add(value.ToString());
+                            string hex = ToHexString(value as byte[]);
+                            log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
+                        }
+                        else
+                        {
+                            long start = long.Parse(keyExtend.Queries["start"]);
+                            long end = long.Parse(keyExtend.Queries["end"]);
+                            tsIndex.Add(new long[] { index - 1, start, end });
+                        }
+
+                        RefreshProgress(ProgressType.当前进度, index, total * 2);
+                        msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
                         ShowStatus(msg);
                         log.Info(msg);
                         index++;
@@ -190,7 +210,109 @@ namespace txkt_m3u8.sqlite_ts
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
                 }
+
+                // 重新排序
+                long matchTime = -1;
+                List<long[]> orderedTsIndex = new List<long[]>();
+                for (int x = 0; x < tsIndex.Count; x++)
+                {
+                    for (int y = 0; y < tsIndex.Count; y++)
+                    {
+                        if (tsIndex[y][1] == matchTime + 1)
+                        {
+                            orderedTsIndex.Add(tsIndex[y]);
+                            matchTime = tsIndex[y][2];
+                        }
+                    }
+                }
+                msg = string.Format("重新排序 => " + fileName);
+                ShowStatus(msg);
+
+                // 保存文件
+                string sourceFolder = _viewModel.SourceFolder.Trim();
+                string targetFolder = _viewModel.TargetFolder.Trim();
+                if (".".Equals(targetFolder))
+                {
+                    targetFolder = sourceFolder;
+                }
+                if (!Directory.Exists(targetFolder))
+                {
+                    Directory.CreateDirectory(targetFolder);
+                }
+                string targetFileName = fileName.Replace(".m3u8.sqlite", ".ts");
+                string targetFilePath = Path.Combine(targetFolder, targetFileName);
+
+                using (FileStream fs = new FileStream(targetFilePath, FileMode.OpenOrCreate, FileAccess.Write))
+                {
+                    int orderIndex = 0;
+                    int orderTotal = orderedTsIndex.Count;
+
+                    List<object[]> cacheOne;
+                    string limit;
+                    object raw;
+                    byte[] chip;
+                    // 合并片段
+                    foreach (long[] tsOne in orderedTsIndex)
+                    {
+                        limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
+                        cacheOne = sqlite.GetRows(cachesTableName, "*", limit);
+                        raw = cacheOne[0][1];
+                        chip = AESDecrypt(raw as byte[], aesKeys[0]);
+                        fs.Write(chip, 0, chip.Length);
+                        orderIndex += 1;
+
+                        RefreshProgress(ProgressType.当前进度, index, total + orderTotal);
+                        msg = string.Format("合并进度 [{0} / {1}] => {2}", orderIndex, orderTotal, fileName);
+                        ShowStatus(msg);
+                        log.Info(msg);
+                        index++;
+                    }
+                }
+
+                /*List<object[]> cacheOne;
+                string limit;
+                object raw;
+                byte[] chip;
+                // 合并片段
+                foreach (long[] tsOne in orderedTsIndex)
+                {
+                    limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
+                    cacheOne = sqlite.GetRows(cachesTableName, "*", limit);
+                    raw = cacheOne[0][1];
+                    chip= AESDecrypt(raw as byte[], aesKeys[0]);
+                    plain.AddRange(chip);
+                    orderIndex += 1;
+
+                    RefreshProgress(ProgressType.当前进度, index, total + orderTotal);
+                    msg = string.Format("合并进度 [{0} / {1}] => {2}", orderIndex, orderTotal, fileName);
+                    ShowStatus(msg);
+                    log.Info(msg);
+                    index++;
+                }
+
+                // 保存文件
+                string sourceFolder = SourceFolder.Text.Trim();
+                string targetFolder = TargetFolder.Text.Trim();
+                if (".".Equals(targetFolder))
+                {
+                    targetFolder = sourceFolder;
+                }
+                if (Directory.Exists(targetFolder))
+                {
+                    Directory.CreateDirectory(targetFolder);
+                }
+                string targetFileName = fileName.Replace(".m3u8.sqlite", ".ts");
+                string targetFilePath = Path.Combine(targetFolder, targetFileName);
+
+                using (FileStream fs = new FileStream(targetFilePath, FileMode.OpenOrCreate, FileAccess.Write))
+                {
+                    fs.Write(plain.ToArray(), 0, plain.Count);
+                }*/
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
             }
+            log.Info(fileName + "文件解码完成，耗时：" + (DateTime.Now - beginTime).TotalMilliseconds + "ms");
         }
 
         /// <summary>
@@ -204,13 +326,13 @@ namespace txkt_m3u8.sqlite_ts
             using (SQLite sqlite = new SQLite(filePath))
             {
                 ShowStatus("解析元数据 => " + filePath);
-                string[] metadatas = sqlite.GetRows("metadata", "value");
-                if (null == metadatas || metadatas.Length <= 0)
+                List<object[]> metadatas = sqlite.GetRows("metadata", "value");
+                if (null == metadatas || metadatas.Count <= 0)
                 {
                     log.Error("metadata 不存在 => " + filePath);
                     return null;
                 }
-                string metadata = metadatas[0];
+                string metadata = metadatas[0][0].ToString();
                 Extend extend = ExtractFromMetadata(metadata);
                 string uin = extend.Tokens["uin"];
                 string termId = extend.Tokens["term_id"];
@@ -238,28 +360,44 @@ namespace txkt_m3u8.sqlite_ts
             log.Info(path);
 
             // 获取token
+            string tokenRaw = "";
+            Dictionary<string, string> tokens = null;
             Match matchToken = new Regex(@"token\.([\S]+)\.v").Match(path);
-            if (!matchToken.Success)
+            if (matchToken.Success)
             {
-                log.Error("token解析失败");
-                return null;
-            }
-            string tokenRaw = matchToken.Value;
-            tokenRaw = tokenRaw.Substring(6);
-            tokenRaw = tokenRaw.Substring(0, tokenRaw.Length - 2);
-
-            string tokenDecode = Base64.Decode(tokenRaw);
+                tokenRaw = matchToken.Value;
+                tokenRaw = tokenRaw.Substring(6);
+                tokenRaw = tokenRaw.Substring(0, tokenRaw.Length - 2);
+                string tokenDecode = Base64Decode(tokenRaw);
+                tokens = ParseQueryString(tokenDecode, ";");
+            }           
 
             return new Extend()
             {
                 Netloc = uri.Host,
                 Path = uri.LocalPath,
                 TokenRaw = tokenRaw,
-                Tokens = ParseQueryString(tokenDecode, ";"),
+                Tokens = tokens,
                 Params = "",
                 Fragment = uri.Fragment,
                 Queries = ParseQueryString(uri.Query)
             };
+        }
+
+        public string ToHexString(byte[] bytes)
+        {
+            string hexString = string.Empty;
+            if (bytes != null)
+            {
+                StringBuilder strB = new StringBuilder();
+                for (int i = 0; i < bytes.Length; i++)
+                {
+                    strB.Append(" " + bytes[i].ToString("X2"));
+                }
+                hexString = strB.ToString();
+
+            }
+            return hexString;
         }
 
         /// <summary>
@@ -306,24 +444,18 @@ namespace txkt_m3u8.sqlite_ts
         /// <param name="total"></param>
         private void RefreshProgress(ProgressType pt, float value, float total)
         {
-            void Refresh()
+            switch (pt)
             {
-                ProgressBar progressBar = pt == ProgressType.当前进度 ? CurrentProgress : TotalProgress;
-                TextBlock percentBar = pt == ProgressType.当前进度 ? CurrentPercent : TotalPercent;
-                progressBar.Maximum = total;
-                progressBar.Value = value;
-                percentBar.Text = String.Format("{0}%  [{1}/{2}]", (value / total * 100).ToString("0.00"), value, total);
-            }
-            try
-            {
-                Refresh();
-            }
-            catch
-            {
-                Dispatcher.InvokeAsync(() =>
-                {
-                    Refresh();
-                });
+                case ProgressType.当前进度:
+                    _viewModel.CurrentMax = total;
+                    _viewModel.CurrentProgress = value;
+                    _viewModel.CurrentPercent = String.Format("{0}%  [{1}/{2}]", (value / total * 100).ToString("0.00"), value, total);
+                    break;
+                case ProgressType.总进度:
+                    _viewModel.TotalMax = total;
+                    _viewModel.TotalProgress = value;
+                    _viewModel.TotalPercent = String.Format("{0}%  [{1}/{2}]", (value / total * 100).ToString("0.00"), value, total);
+                    break;
             }
         }
 
@@ -418,76 +550,64 @@ namespace txkt_m3u8.sqlite_ts
 
         #region Base64
         /// <summary>
-        /// Base64 相关操作
+        /// Base64解码
         /// </summary>
-        public class Base64
+        /// <param name="base64"></param>
+        /// <returns></returns>
+        private string Base64Decode(string base64)
         {
-            /// <summary>
-            /// 解码
-            /// </summary>
-            /// <param name="base64"></param>
-            /// <returns></returns>
-            public static string Decode(string base64)
-            {
-                return Decode(base64, Encoding.UTF8);
-            }
+            return Base64Decode(base64, Encoding.UTF8);
+        }
 
-            /// <summary>
-            /// 解码
-            /// </summary>
-            /// <param name="base64"></param>
-            /// <param name="encoding"></param>
-            /// <returns></returns>
-            public static string Decode(string base64, Encoding encoding)
+        /// <summary>
+        /// Base64解码
+        /// </summary>
+        /// <param name="base64"></param>
+        /// <param name="encoding"></param>
+        /// <returns></returns>
+        private string Base64Decode(string base64, Encoding encoding)
+        {
+            string dummyData = base64.Trim().Replace("%", "").Replace(",", "").Replace(" ", "+");
+            if (dummyData.Length % 4 > 0)
             {
-                string dummyData = base64.Trim().Replace("%", "").Replace(",", "").Replace(" ", "+");
-                if (dummyData.Length % 4 > 0)
-                {
-                    dummyData = dummyData.PadRight(dummyData.Length + 4 - dummyData.Length % 4, '=');
-                }
-                string text = string.Empty;
-                byte[] bytes = Convert.FromBase64String(dummyData);
-                try
-                {
-                    text = encoding.GetString(bytes);
-                }
-                catch
-                {
-                    text = base64;
-                }
-                return text;
+                dummyData = dummyData.PadRight(dummyData.Length + 4 - dummyData.Length % 4, '=');
             }
+            string text = string.Empty;
+            byte[] bytes = Convert.FromBase64String(dummyData);
+            try
+            {
+                text = encoding.GetString(bytes);
+            }
+            catch
+            {
+                text = base64;
+            }
+            return text;
+        }
+        #endregion
 
-            /// <summary>
-            /// 编码
-            /// </summary>
-            /// <param name="source"></param>
-            /// <returns></returns>
-            public static string Encode(string source)
-            {
-                return Encode(source, Encoding.UTF8);
-            }
-
-            /// <summary>
-            /// 编码
-            /// </summary>
-            /// <param name="source"></param>
-            /// <param name="encoding"></param>
-            /// <returns></returns>
-            public static string Encode(string source, Encoding encoding)
-            {
-                string text = string.Empty;
-                byte[] bytes = encoding.GetBytes(source);
-                try
-                {
-                    text = Convert.ToBase64String(bytes);
-                }
-                catch
-                {
-                    text = source;
-                }
-                return text;
-            }
+        #region AES
+        /// <summary>
+        /// AES解密
+        /// </summary>
+        /// <param name="raw">被解密的密文</param>
+        /// <param name="key">密钥</param>
+        /// <param name="vector">向量</param>
+        /// <returns>明文</returns>
+        private byte[] AESDecrypt(byte[] raw, string key, string iv = "0000000000000000")
+        {
+            byte[] keyArray = new byte[32];
+            Array.Copy(Encoding.UTF8.GetBytes(key.PadRight(keyArray.Length)), keyArray, keyArray.Length);
+            byte[] ivArray = Encoding.UTF8.GetBytes(iv);
+            RijndaelManaged rDel = new RijndaelManaged();
+            rDel.Key = keyArray;
+            rDel.IV = ivArray;
+            rDel.Mode = CipherMode.CBC;
+            rDel.Padding = PaddingMode.Zeros;
+            rDel.BlockSize = 128;
+            ICryptoTransform cTransform = rDel.CreateDecryptor();
+            byte[] resultArray = cTransform.TransformFinalBlock(raw, 0, raw.Length);
+            return resultArray; 
         }
         #endregion
 
@@ -683,7 +803,7 @@ namespace txkt_m3u8.sqlite_ts
             /// <param name="fieldName">字段名</param>
             /// <param name="limit">分页limit（例如：limit 0,500）</param>
             /// <returns>列数组</returns>        
-            public string[] GetRows(string tableName, string fieldName, string limit = "")
+            public List<object[]> GetRows(string tableName, string fieldName, string limit = "")
             {
                 if (!IsExistsTable(tableName))
                 {
@@ -698,10 +818,10 @@ namespace txkt_m3u8.sqlite_ts
                 SQLiteDataAdapter sda = new SQLiteDataAdapter(queryString, _connection);
                 DataTable dt = new DataTable();
                 sda.Fill(dt);
-                string[] rows = new string[dt.Rows.Count];
+                List<object[]> rows = new List<object[]>();
                 for (int i = 0; i < dt.Rows.Count; i++)
                 {
-                    rows[i] = dt.Rows[i][fieldName].ToString();
+                    rows.Add(dt.Rows[i].ItemArray);
                 }
                 sda.Dispose();
                 dt.Dispose();
@@ -730,17 +850,17 @@ namespace txkt_m3u8.sqlite_ts
                 }
                 return result;
             }
-            public List<string[]> GetAllLines(string tableName)
+            public List<object[]> GetAllLines(string tableName)
             {
                 queryString = string.Format("SELECT * FROM {0}", tableName);
                 ExecuteQuery();
-                string[] array = new string[_reader.FieldCount];
-                List<string[]> result = new List<string[]>();
+                object[] array = new object[_reader.FieldCount];
+                List<object[]> result = new List<object[]>();
                 while (_reader.Read())
                 {
                     for (int i = 0; i < _reader.FieldCount - 1; i++)
                     {
-                        array[i] = Convert.ToString(_reader[i]);
+                        array[i] = _reader[i];
                     }
                     result.Add(array);
                 }

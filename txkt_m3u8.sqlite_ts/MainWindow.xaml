@@ -12,27 +12,27 @@
         <StackPanel Margin="10,10,10,0">
             <Grid Margin="0,15,0,0">
                 <Label Content="m3u8.sqlite文件夹："/>
-                <TextBox x:Name="SourceFolder" Text="G:\TXEDU" Margin="130,0,80,0" VerticalContentAlignment="Center"/>
+                <TextBox Text="{Binding SourceFolder}" Margin="130,0,80,0" VerticalContentAlignment="Center"/>
                 <Button x:Name="BtnSelectSourceFolder" Content="选择" Width="80" HorizontalAlignment="Right" Cursor="Hand" Click="BtnSelectSourceFolder_Click"/>
             </Grid>
             <Grid Margin="0,15,0,0">
                 <Label Content="ts输出文件夹："/>
-                <TextBox x:Name="TargetFolder" Text="." Margin="130,0,80,0" VerticalContentAlignment="Center"/>
+                <TextBox Text="{Binding TargetFolder}" Margin="130,0,80,0" VerticalContentAlignment="Center"/>
                 <Button x:Name="BtnSelectTargetFolder" Content="选择" Width="80" HorizontalAlignment="Right" Cursor="Hand" Click="BtnSelectTargetFolder_Click"/>
             </Grid>
             <Grid Margin="0,15,0,0">
                 <Label Content="当前进度："/>
-                <ProgressBar x:Name="CurrentProgress" Margin="130,0,0,0" Value="80" Maximum="100" Background="Gray"
+                <ProgressBar Margin="130,0,0,0" Value="{Binding CurrentProgress}" Maximum="{Binding CurrentMax}" Background="Gray"
                                                 rubyer:ProgressBarHelper.Thickness="30"
                                                 rubyer:ProgressBarHelper.IsShowPercent="false"/>
-                <TextBlock x:Name="CurrentPercent" Margin="135,0,0,0" Text="80 / 100" Foreground="White" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBlock Margin="135,0,0,0" Text="{Binding CurrentPercent}" Foreground="White" HorizontalAlignment="Left" VerticalAlignment="Center"/>
             </Grid>
             <Grid Margin="0,15,0,0">
                 <Label Content="总进度："/>
-                <ProgressBar x:Name="TotalProgress"  Margin="130,0,0,0" Value="30" Maximum="100"  Background="Gray"
+                <ProgressBar Margin="130,0,0,0" Value="{Binding TotalProgress}" Maximum="{Binding TotalMax}"  Background="Gray"
                                                 rubyer:ProgressBarHelper.Thickness="30"
                                                 rubyer:ProgressBarHelper.IsShowPercent="false"/>
-                <TextBlock x:Name="TotalPercent" Margin="135,0,0,0" Text="30 / 100" Foreground="White" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBlock Margin="135,0,0,0" Text="{Binding TotalPercent}" Foreground="White" HorizontalAlignment="Left" VerticalAlignment="Center"/>
             </Grid>
             <Grid Margin="0,30,0,0">
                 <Button x:Name="BeginConvert" Content="开始转换" Width="120" Background="Red" Click="BeginConvert_Click"/>
