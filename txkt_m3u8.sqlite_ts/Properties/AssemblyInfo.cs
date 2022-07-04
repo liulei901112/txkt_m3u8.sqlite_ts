@@ -8,11 +8,11 @@ using System.Windows;
 // 控制。更改这些特性值可修改
 // 与程序集关联的信息。
 [assembly: AssemblyTitle("txkt_m3u8.sqlite_ts")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("m3u8.sqlite转ts视频工具")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("txkt_m3u8.sqlite_ts")]
-[assembly: AssemblyCopyright("Copyright ©  2022")]
+[assembly: AssemblyCompany("刘磊")]
+[assembly: AssemblyProduct("m3u8.sqlite转ts")]
+[assembly: AssemblyCopyright("Copyright © 2021 - 2022 Liulei All rights reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
