@@ -42,5 +42,10 @@ namespace txkt_m3u8.sqlite_ts.ViewModel
         /// 当前进度百分比
         /// </summary>
         public string TotalPercent { get; set; }
+
+        /// <summary>
+        /// 工作状态
+        /// </summary>
+        public string WorkStatus { get; set; }  
     }
 }

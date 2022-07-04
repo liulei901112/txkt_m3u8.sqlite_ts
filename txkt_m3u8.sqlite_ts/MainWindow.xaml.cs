@@ -8,10 +8,10 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Windows;
-using System.Windows.Controls;
 using txkt_m3u8.sqlite_ts.ViewModel;
 
 namespace txkt_m3u8.sqlite_ts
@@ -172,44 +172,52 @@ namespace txkt_m3u8.sqlite_ts
                 List<long[]> tsIndex = new List<long[]>();
                 List<string> aesKeys = new List<string>();
 
-                int pageSize = 200;
+                int pageSize = 100;
                 int totalPage = (total + pageSize - 1) / pageSize;
+                
+
                 for (int i = 1; i <= totalPage; i++)
                 {
                     string pageLimit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
                     List<object[]> caches = sqlite.GetRows(cachesTableName, "*", pageLimit);
                     foreach (object[] cache in caches)
                     {
-                        string key = cache[0].ToString();
-                        object value = cache[1];
-
-                        Extend keyExtend = ExtractFromMetadata(key);
-                        string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
-
-                        if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
-                        { }
-                        else if (keyQueriesExtendKeys.Contains("edk"))
+                        try
                         {
-                            aesKeys.Add(value.ToString());
-                            string hex = ToHexString(value as byte[]);
-                            log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
-                        }
-                        else
-                        {
-                            long start = long.Parse(keyExtend.Queries["start"]);
-                            long end = long.Parse(keyExtend.Queries["end"]);
-                            tsIndex.Add(new long[] { index - 1, start, end });
-                        }
+                            string key = cache[0].ToString();
+                            object value = cache[1];
 
-                        RefreshProgress(ProgressType.当前进度, index, total * 2);
-                        msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
-                        ShowStatus(msg);
-                        log.Info(msg);
-                        index++;
+                            Extend keyExtend = ExtractFromMetadata(key);
+                            string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
+
+                            if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
+                            { }
+                            else if (keyQueriesExtendKeys.Contains("edk"))
+                            {
+                                aesKeys.Add(value.ToString());
+                                string hex = ToHexString(value as byte[]);
+                                log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
+                            }
+                            else
+                            {
+                                long start = long.Parse(keyExtend.Queries["start"]);
+                                long end = long.Parse(keyExtend.Queries["end"]);
+                                tsIndex.Add(new long[] { index - 1, start, end });
+                            }
+
+                            RefreshProgress(ProgressType.当前进度, index, total * 2);
+                            msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
+                            ShowStatus(msg);
+                            log.Info(msg);
+                        }
+                        finally
+                        {
+                            Interlocked.Increment(ref index);
+                        }
                     }
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                }
+                }          
 
                 // 重新排序
                 long matchTime = -1;
@@ -449,7 +457,7 @@ namespace txkt_m3u8.sqlite_ts
                 case ProgressType.当前进度:
                     _viewModel.CurrentMax = total;
                     _viewModel.CurrentProgress = value;
-                    _viewModel.CurrentPercent = String.Format("{0}%  [{1}/{2}]", (value / total * 100).ToString("0.00"), value, total);
+                    _viewModel.CurrentPercent = String.Format("{0}%", (value / total * 100).ToString("0.00"));
                     break;
                 case ProgressType.总进度:
                     _viewModel.TotalMax = total;
@@ -465,21 +473,7 @@ namespace txkt_m3u8.sqlite_ts
         /// <param name="logtxt"></param>
         private void ShowStatus(string text)
         {
-            void Append()
-            {
-                this.WorkStatus.Content = text;
-            }
-            try
-            {
-                Append();
-            }
-            catch
-            {
-                Dispatcher.InvokeAsync(() =>
-                {
-                    Append();
-                });
-            }
+            _viewModel.WorkStatus = text;
         }
         #endregion
 
@@ -592,22 +586,25 @@ namespace txkt_m3u8.sqlite_ts
         /// </summary>
         /// <param name="raw">被解密的密文</param>
         /// <param name="key">密钥</param>
-        /// <param name="vector">向量</param>
+        /// <param name="iv">向量</param>
         /// <returns>明文</returns>
         private byte[] AESDecrypt(byte[] raw, string key, string iv = "0000000000000000")
         {
-            byte[] keyArray = new byte[32];
-            Array.Copy(Encoding.UTF8.GetBytes(key.PadRight(keyArray.Length)), keyArray, keyArray.Length);
-            byte[] ivArray = Encoding.UTF8.GetBytes(iv);
-            RijndaelManaged rDel = new RijndaelManaged();
-            rDel.Key = keyArray;
-            rDel.IV = ivArray;
-            rDel.Mode = CipherMode.CBC;
-            rDel.Padding = PaddingMode.Zeros;
-            rDel.BlockSize = 128;
-            ICryptoTransform cTransform = rDel.CreateDecryptor();
-            byte[] resultArray = cTransform.TransformFinalBlock(raw, 0, raw.Length);
-            return resultArray; 
+            byte[] bkey = new byte[32];
+            Array.Copy(Encoding.UTF8.GetBytes(key.PadRight(bkey.Length)), bkey, bkey.Length);
+            byte[] biv = Encoding.UTF8.GetBytes(iv);
+            
+            RijndaelManaged aes = new RijndaelManaged()
+            {
+                Key = bkey,
+                IV = biv,
+                Mode = CipherMode.CBC,
+                Padding = PaddingMode.Zeros,
+                BlockSize = 128
+            };
+            ICryptoTransform cTransform = aes.CreateDecryptor();
+            byte[] rs = cTransform.TransformFinalBlock(raw, 0, raw.Length);
+            return rs;
         }
         #endregion
 

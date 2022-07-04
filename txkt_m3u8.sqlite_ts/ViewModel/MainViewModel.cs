@@ -124,5 +124,17 @@ namespace txkt_m3u8.sqlite_ts.ViewModel
                 RaisePropertyChanged("TotalPercent");
             }
         }
+
+        /// <summary>
+        /// 工作状态
+        /// </summary>
+        public string WorkStatus {
+            get { return model.WorkStatus; }
+            set
+            {
+                model.WorkStatus = value;
+                RaisePropertyChanged("WorkStatus");
+            }
+        }
     }
 }
