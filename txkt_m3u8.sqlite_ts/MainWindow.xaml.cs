@@ -170,7 +170,7 @@ namespace txkt_m3u8.sqlite_ts
                 RefreshProgress(ProgressType.当前进度, 0, total * 2);
 
                 List<long[]> tsIndex = new List<long[]>();
-                List<string> aesKeys = new List<string>();
+                List<byte[]> aesKeys = new List<byte[]>();
 
                 int pageSize = 100;
                 int totalPage = (total + pageSize - 1) / pageSize;
@@ -194,7 +194,7 @@ namespace txkt_m3u8.sqlite_ts
                             { }
                             else if (keyQueriesExtendKeys.Contains("edk"))
                             {
-                                aesKeys.Add(value.ToString());
+                                aesKeys.Add(value as byte[]);
                                 string hex = ToHexString(value as byte[]);
                                 log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
                             }
@@ -249,6 +249,17 @@ namespace txkt_m3u8.sqlite_ts
                 }
                 string targetFileName = fileName.Replace(".m3u8.sqlite", ".ts");
                 string targetFilePath = Path.Combine(targetFolder, targetFileName);
+                if (File.Exists(targetFilePath))
+                {
+                    try
+                    {
+                        File.Delete(targetFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error("删除失败：" + ex.Message, ex);
+                    }
+                }
 
                 using (FileStream fs = new FileStream(targetFilePath, FileMode.OpenOrCreate, FileAccess.Write))
                 {
@@ -588,20 +599,18 @@ namespace txkt_m3u8.sqlite_ts
         /// <param name="key">密钥</param>
         /// <param name="iv">向量</param>
         /// <returns>明文</returns>
-        private byte[] AESDecrypt(byte[] raw, string key, string iv = "0000000000000000")
+        private byte[] AESDecrypt(byte[] raw, byte[] key, string iv = "0000000000000000")
         {
-            byte[] bkey = new byte[32];
-            Array.Copy(Encoding.UTF8.GetBytes(key.PadRight(bkey.Length)), bkey, bkey.Length);
-            byte[] biv = Encoding.UTF8.GetBytes(iv);
-            
+            byte[] biv = UTF8Encoding.UTF8.GetBytes(iv);
+
             RijndaelManaged aes = new RijndaelManaged()
             {
-                Key = bkey,
+                KeySize = 128,
+                Key = key,
                 IV = biv,
-                Mode = CipherMode.CBC,
-                Padding = PaddingMode.Zeros,
-                BlockSize = 128
+                Mode = CipherMode.CBC
             };
+
             ICryptoTransform cTransform = aes.CreateDecryptor();
             byte[] rs = cTransform.TransformFinalBlock(raw, 0, raw.Length);
             return rs;
