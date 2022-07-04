@@ -462,7 +462,7 @@ namespace txkt_m3u8.sqlite_ts
                 case ProgressType.总进度:
                     _viewModel.TotalMax = total;
                     _viewModel.TotalProgress = value;
-                    _viewModel.TotalPercent = String.Format("{0}%  [{1}/{2}]", (value / total * 100).ToString("0.00"), value, total);
+                    _viewModel.TotalPercent = String.Format("{0} / {1}", value, total);
                     break;
             }
         }
