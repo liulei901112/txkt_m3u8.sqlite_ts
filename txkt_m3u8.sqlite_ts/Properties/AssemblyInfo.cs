@@ -12,7 +12,7 @@ using System.Windows;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("刘磊")]
 [assembly: AssemblyProduct("m3u8.sqlite转ts")]
-[assembly: AssemblyCopyright("Copyright © 2021 - 2022 Liulei All rights reserved.")]
+[assembly: AssemblyCopyright("Copyright © 2022 Liulei All rights reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
