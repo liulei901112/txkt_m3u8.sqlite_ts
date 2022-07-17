@@ -128,6 +128,10 @@ namespace txkt_m3u8.sqlite_ts
                     {
                         // 解析元数据
                         string[] metadata = FetchOneMetadata(filePath);
+                        if (metadata == null)
+                        {
+                            throw new Exception("metadata解析错误，可能版本不兼容或文件损坏");
+                        }
                         string uin = metadata[1];
                         string termId = metadata[2];
 
@@ -139,8 +143,11 @@ namespace txkt_m3u8.sqlite_ts
                     }
                     catch (Exception ex)
                     {
-                        log.Error("文件损坏 => " + filePath + "; " + ex.Message, ex);
-                        MessageCore.ShowError("文件损坏 => " + filePath);
+                        log.Error("文件损坏 => " + filePath+ "，" + ex.Message, ex);
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            MessageCore.ShowError("文件损坏 => " + Path.GetFileName(filePath));
+                        });
                     }
                     index++;
                 }
@@ -345,7 +352,16 @@ namespace txkt_m3u8.sqlite_ts
             using (SQLite sqlite = new SQLite(filePath))
             {
                 ShowStatus("解析元数据 => " + filePath);
-                List<object[]> metadatas = sqlite.GetRows("metadata", "value");
+                List<object[]> metadatas = null;
+                try
+                {
+                    metadatas = sqlite.GetRows("metadata", "value");
+                }
+                catch (Exception ex)
+                {
+                    log.Error("metadata 查询错误 => " + ex.Message, ex);
+                    return null;
+                }
                 if (null == metadatas || metadatas.Count <= 0)
                 {
                     log.Error("metadata 不存在 => " + filePath);
