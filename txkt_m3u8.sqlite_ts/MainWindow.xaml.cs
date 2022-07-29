@@ -215,7 +215,7 @@ namespace txkt_m3u8.sqlite_ts
                             RefreshProgress(ProgressType.当前进度, index, total * 2);
                             msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
                             ShowStatus(msg);
-                            log.Info(msg);
+                            log.Info(msg + "," + key.Substring(key.IndexOf("?")));
                         }
                         finally
                         {
@@ -280,9 +280,16 @@ namespace txkt_m3u8.sqlite_ts
                     // 合并片段
                     foreach (long[] tsOne in orderedTsIndex)
                     {
+                        string tp = "index=" + tsOne[0] + "，start=" + tsOne[1] + "，end=" + tsOne[2];
+                        // log.Info(tp);
                         limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
                         cacheOne = sqlite.GetRows(cachesTableName, "*", limit);
                         raw = cacheOne[0][1];
+                        if (null == raw || (raw as byte[]).Length <= 0)
+                        {
+                            log.Error("raw数据为空，" + tp);
+                            continue;
+                        }
                         chip = AESDecrypt(raw as byte[], aesKeys[0]);
                         fs.Write(chip, 0, chip.Length);
                         orderIndex += 1;
@@ -290,7 +297,7 @@ namespace txkt_m3u8.sqlite_ts
                         RefreshProgress(ProgressType.当前进度, index, total + orderTotal);
                         msg = string.Format("合并进度 [{0} / {1}] => {2}", orderIndex, orderTotal, fileName);
                         ShowStatus(msg);
-                        log.Info(msg);
+                        log.Info(msg + ", " + tp);
                         index++;
                     }
                 }
@@ -823,9 +830,9 @@ namespace txkt_m3u8.sqlite_ts
             /// </summary>
             /// <param name="tableName">表名</param>
             /// <param name="fieldName">字段名</param>
-            /// <param name="limit">分页limit（例如：limit 0,500）</param>
+            /// <param name="conditions">1、where条件，2、分页limit（例如：limit 0,500）</param>
             /// <returns>列数组</returns>        
-            public List<object[]> GetRows(string tableName, string fieldName, string limit = "")
+            public List<object[]> GetRows(string tableName, string fieldName, string conditions = "")
             {
                 if (!IsExistsTable(tableName))
                 {
@@ -835,7 +842,7 @@ namespace txkt_m3u8.sqlite_ts
                 {
                     throw new Exception("表中不存在字段:" + fieldName);
                 }
-                queryString = string.Format("SELECT {0} FROM {1} {2}", fieldName, tableName, limit);
+                queryString = string.Format("SELECT {0} FROM {1} {2}", fieldName, tableName, conditions);
 
                 SQLiteDataAdapter sda = new SQLiteDataAdapter(queryString, _connection);
                 DataTable dt = new DataTable();
