@@ -13,7 +13,9 @@ namespace txkt_m3u8.sqlite_ts.ViewModel
         {
             model = new MainModel()
             {
-                //SourceFolder = "D:\\TTS",
+#if DEBUG
+                SourceFolder = "D:\\TTS",
+#endif
                 TargetFolder = ".",
 
                 CurrentProgress = 0,

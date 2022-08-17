@@ -249,68 +249,36 @@ namespace txkt_m3u8.sqlite_ts
                 /*List<long[]> tsIndex = new List<long[]>();
                 List<byte[]> aesKeys = new List<byte[]>();*/
 
-                List<object[]> caches = sqlite.GetRows(cachesTableName, "*");
+                List<object[]> caches = new List<object[]>(); //sqlite.GetRows(cachesTableName, "*");
                 if (total > 0)
                 {
                     using (MutipleThreadResetEvent resetEvent = new MutipleThreadResetEvent(total))
                     {
-                        // 遍历读取文件，并创建索引
-                        for (int i = 0; i < total; i++)
+                        int pageSize = 500;
+                        int totalPage = (total + pageSize - 1) / pageSize;
+                        for (int i = 1; i <= totalPage; i++)
                         {
-                            object[] cache = caches[i];
-                            // 加入线程池
-                            ThreadPool.QueueUserWorkItem(new WaitCallback(ConversionTask), new TaskInfo()
+                            string pageLimit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
+                            List<object[]> subCaches = sqlite.GetRows(cachesTableName, "*", pageLimit);
+                            caches.AddRange(subCaches);
+                            foreach (object[] cache in subCaches)
                             {
-                                FileName = fileName,
-                                Cache = cache,
-                                Index = index++,
-                                Total = total,
-                                ResetEvent = resetEvent
-                            });
+                                // 加入线程池
+                                ThreadPool.QueueUserWorkItem(new WaitCallback(ConversionTask), new TaskInfo()
+                                {
+                                    FileName = fileName,
+                                    Cache = cache,
+                                    Index = index++,
+                                    Total = total,
+                                    ResetEvent = resetEvent
+                                });
+                            }
                         }
 
                         // 等待所有线程结束
                         resetEvent.WaitAll();
-
-                        GC.Collect();
-                        GC.WaitForPendingFinalizers();
                     }
                 }
-                /*foreach (object[] cache in caches)
-                {
-                    try
-                    {
-                        string key = cache[0].ToString();
-                        object value = cache[1];
-
-                        Extend keyExtend = ExtractFromMetadata(key);
-                        string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
-
-                        if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
-                        { }
-                        else if (keyQueriesExtendKeys.Contains("edk"))
-                        {
-                            aesKeys.Add(value as byte[]);
-                            string hex = ToHexString(value as byte[]);
-                            log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
-                        }
-                        else
-                        {
-                            long start = long.Parse(keyExtend.Queries["start"]);
-                            long end = long.Parse(keyExtend.Queries["end"]);
-                            tsIndex.Add(new long[] { index - 1, start, end });
-                        }
-
-                        RefreshProgress(ProgressType.当前进度, index, total * 2);
-                        msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
-                        ShowStatus(msg);
-                        log.Info(msg + "," + key.Substring(key.IndexOf("?")));
-                    }
-                    finally
-                    {
-                        Interlocked.Increment(ref index);
-                    }
-                }*/
 
                 /*int pageSize = 100;
                 int totalPage = (total + pageSize - 1) / pageSize;
@@ -359,7 +327,18 @@ namespace txkt_m3u8.sqlite_ts
                     GC.WaitForPendingFinalizers();
                 }*/
 
-                // 重新排序
+                // 重新排序（最快）
+                DateTime t0 = DateTime.Now;
+                TsIndex.Sort((a, b) => { return a[1].CompareTo(b[1]); });
+                log.Debug((DateTime.Now - t0).TotalMilliseconds);
+                
+                /*// 相对慢
+                DateTime t1 = DateTime.Now;
+                TsIndex = TsIndex.OrderBy(x => x[1]).ToList();
+                log.Debug((DateTime.Now - t1).TotalMilliseconds);
+
+                // 最慢
+                DateTime t2 = DateTime.Now;
                 long matchTime = -1;
                 List<long[]> orderedTsIndex = new List<long[]>();
                 for (int x = 0; x < TsIndex.Count; x++)
@@ -372,7 +351,9 @@ namespace txkt_m3u8.sqlite_ts
                             matchTime = TsIndex[y][2];
                         }
                     }
-                }
+                }                
+                log.Debug((DateTime.Now - t2).TotalMilliseconds);*/
+
                 msg = string.Format("重新排序 => " + fileName);
                 ShowStatus(msg);
 
@@ -404,34 +385,41 @@ namespace txkt_m3u8.sqlite_ts
                 using (FileStream fs = new FileStream(targetFilePath, FileMode.OpenOrCreate, FileAccess.Write))
                 {
                     int orderIndex = 0;
-                    int orderTotal = orderedTsIndex.Count;
+                    int orderTotal = TsIndex.Count;
 
-                    List<object[]> cacheOne;
                     string limit;
                     object raw;
                     byte[] chip;
                     // 合并片段
-                    foreach (long[] tsOne in orderedTsIndex)
+                    foreach (long[] tsOne in TsIndex)
                     {
-                        string tp = "index=" + tsOne[0] + "，start=" + tsOne[1] + "，end=" + tsOne[2];
-                        // log.Info(tp);
-                        limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
-                        cacheOne = sqlite.GetRows(cachesTableName, "*", limit);
-                        raw = cacheOne[0][1];
-                        if (null == raw || (raw as byte[]).Length <= 0)
+                        try
                         {
-                            log.Error("raw数据为空，" + tp);
-                            continue;
-                        }
-                        chip = AESDecrypt(raw as byte[], AesKeys[0]);
-                        fs.Write(chip, 0, chip.Length);
-                        orderIndex += 1;
+                            string tp = "index=" + tsOne[0] + "，start=" + tsOne[1] + "，end=" + tsOne[2];
+                            // log.Info(tp);
+                            limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
+                            // 从数据库获取数据
+                            // List<object[]> cacheOne = sqlite.GetRows(cachesTableName, "*", limit); 
+                            // raw = cacheOne[0][1];
+                            raw = caches[((int)tsOne[0])][1];
+                            if (null == raw || (raw as byte[]).Length <= 0)
+                            {
+                                log.Error("raw数据为空，" + tp);
+                                continue;
+                            }
+                            chip = AESDecrypt(raw as byte[], AesKeys[0]);
+                            fs.Write(chip, 0, chip.Length);
+                            orderIndex += 1;
 
-                        RefreshProgress(ProgressType.当前进度, index, total + orderTotal);
-                        msg = string.Format("合并进度 [{0} / {1}] => {2}", orderIndex, orderTotal, fileName);
-                        ShowStatus(msg);
-                        log.Info(msg + ", " + tp);
-                        index++;
+                            RefreshProgress(ProgressType.当前进度, index, total + orderTotal);
+                            msg = string.Format("合并进度 [{0} / {1}] => {2}", orderIndex, orderTotal, fileName);
+                            ShowStatus(msg);
+                            log.Info(msg + ", " + tp);
+                        }
+                        finally
+                        {
+                            index++;
+                        }
                     }
                 }
 
