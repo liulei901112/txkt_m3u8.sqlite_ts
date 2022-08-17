@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Windows;
+using txkt_m3u8.sqlite_ts.Util;
 using txkt_m3u8.sqlite_ts.ViewModel;
 
 namespace txkt_m3u8.sqlite_ts
@@ -155,6 +156,74 @@ namespace txkt_m3u8.sqlite_ts
         }
 
         /// <summary>
+        /// 任务信息
+        /// </summary>
+        class TaskInfo
+        {
+            public string FileName { get; set; }
+            public object[] Cache { get; set; }
+            public int Index { get; set; }
+            public int Total { get; set; }
+            public MutipleThreadResetEvent ResetEvent { get; set; }
+        }
+
+        /// <summary>
+        /// 多线程转换任务
+        /// </summary>
+        /// <param name="state"></param>
+
+        private void ConversionTask(object state)
+        {
+            TaskInfo taskInfo = state as TaskInfo;
+            try
+            {
+                string key = taskInfo.Cache[0].ToString();
+                object value = taskInfo.Cache[1];
+
+                Extend keyExtend = ExtractFromMetadata(key);
+                string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
+
+                if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
+                { }
+                else if (keyQueriesExtendKeys.Contains("edk"))
+                {
+                    lock(AesKeysLock)
+                    {
+                        AesKeys.Add(value as byte[]);
+                    }
+                    string hex = ToHexString(value as byte[]);
+                    log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
+                }
+                else
+                {
+                    long start = long.Parse(keyExtend.Queries["start"]);
+                    long end = long.Parse(keyExtend.Queries["end"]);
+                    lock(TsIndexLock)
+                    {
+                        TsIndex.Add(new long[] { taskInfo.Index - 1, start, end });
+                    }
+                }
+
+                RefreshProgress(ProgressType.当前进度, taskInfo.Index, taskInfo.Total * 2);
+                string msg = string.Format("解码进度 [{0} / {1}] => {2}", taskInfo.Index, taskInfo.Total, taskInfo.FileName);
+                ShowStatus(msg);
+                log.Info(msg + "," + key.Substring(key.IndexOf("?")));
+            }
+            finally
+            {
+                // Interlocked.Increment(ref index);
+                taskInfo.ResetEvent.WakeOne();
+            }
+        }
+
+        // 锁
+        private object TsIndexLock = new object();
+        private object AesKeysLock = new object();
+        // 数据列表
+        private List<long[]> TsIndex = new List<long[]>();
+        private List<byte[]> AesKeys = new List<byte[]>();
+
+        /// <summary>
         /// 获取一个ts
         /// </summary>
         /// <param name="filePath"></param>
@@ -173,13 +242,77 @@ namespace txkt_m3u8.sqlite_ts
                 string cachesTableName = "caches";
                 int total = sqlite.GetRowsCount(cachesTableName);
                 int index = 1;
-
+                TsIndex = new List<long[]>();
+                AesKeys = new List<byte[]>();
                 RefreshProgress(ProgressType.当前进度, 0, total * 2);
 
-                List<long[]> tsIndex = new List<long[]>();
-                List<byte[]> aesKeys = new List<byte[]>();
+                /*List<long[]> tsIndex = new List<long[]>();
+                List<byte[]> aesKeys = new List<byte[]>();*/
 
-                int pageSize = 100;
+                List<object[]> caches = sqlite.GetRows(cachesTableName, "*");
+                if (total > 0)
+                {
+                    using (MutipleThreadResetEvent resetEvent = new MutipleThreadResetEvent(total))
+                    {
+                        // 遍历读取文件，并创建索引
+                        for (int i = 0; i < total; i++)
+                        {
+                            object[] cache = caches[i];
+                            // 加入线程池
+                            ThreadPool.QueueUserWorkItem(new WaitCallback(ConversionTask), new TaskInfo()
+                            {
+                                FileName = fileName,
+                                Cache = cache,
+                                Index = index++,
+                                Total = total,
+                                ResetEvent = resetEvent
+                            });
+                        }
+
+                        // 等待所有线程结束
+                        resetEvent.WaitAll();
+
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                    }
+                }
+                /*foreach (object[] cache in caches)
+                {
+                    try
+                    {
+                        string key = cache[0].ToString();
+                        object value = cache[1];
+
+                        Extend keyExtend = ExtractFromMetadata(key);
+                        string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
+
+                        if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
+                        { }
+                        else if (keyQueriesExtendKeys.Contains("edk"))
+                        {
+                            aesKeys.Add(value as byte[]);
+                            string hex = ToHexString(value as byte[]);
+                            log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
+                        }
+                        else
+                        {
+                            long start = long.Parse(keyExtend.Queries["start"]);
+                            long end = long.Parse(keyExtend.Queries["end"]);
+                            tsIndex.Add(new long[] { index - 1, start, end });
+                        }
+
+                        RefreshProgress(ProgressType.当前进度, index, total * 2);
+                        msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
+                        ShowStatus(msg);
+                        log.Info(msg + "," + key.Substring(key.IndexOf("?")));
+                    }
+                    finally
+                    {
+                        Interlocked.Increment(ref index);
+                    }
+                }*/
+
+                /*int pageSize = 100;
                 int totalPage = (total + pageSize - 1) / pageSize;
                 
 
@@ -224,19 +357,19 @@ namespace txkt_m3u8.sqlite_ts
                     }
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
-                }          
+                }*/
 
                 // 重新排序
                 long matchTime = -1;
                 List<long[]> orderedTsIndex = new List<long[]>();
-                for (int x = 0; x < tsIndex.Count; x++)
+                for (int x = 0; x < TsIndex.Count; x++)
                 {
-                    for (int y = 0; y < tsIndex.Count; y++)
+                    for (int y = 0; y < TsIndex.Count; y++)
                     {
-                        if (tsIndex[y][1] == matchTime + 1)
+                        if (TsIndex[y][1] == matchTime + 1)
                         {
-                            orderedTsIndex.Add(tsIndex[y]);
-                            matchTime = tsIndex[y][2];
+                            orderedTsIndex.Add(TsIndex[y]);
+                            matchTime = TsIndex[y][2];
                         }
                     }
                 }
@@ -290,7 +423,7 @@ namespace txkt_m3u8.sqlite_ts
                             log.Error("raw数据为空，" + tp);
                             continue;
                         }
-                        chip = AESDecrypt(raw as byte[], aesKeys[0]);
+                        chip = AESDecrypt(raw as byte[], AesKeys[0]);
                         fs.Write(chip, 0, chip.Length);
                         orderIndex += 1;
 
@@ -780,7 +913,7 @@ namespace txkt_m3u8.sqlite_ts
             /// <returns>列数</returns>        
             public int GetRowsCount(string tableName)
             {
-                queryString = "SELECT count(*) FROM " + tableName;
+                queryString = "SELECT count(0) FROM " + tableName;
                 ExecuteQuery();
                 _reader.Read();
                 return _reader.GetInt32(0);
