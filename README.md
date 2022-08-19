@@ -1,5 +1,6 @@
 # m3u8.sqlite文件转视频工具.net wpf版本
 
+## 提示：发行版zip包在[gitee](https://gitee.com/liulei901112/txkt_m3u8.sqlite_ts)下，[github](https://github.com/liulei901112/txkt_m3u8.sqlite_ts)只是同步了代码
 #### 软件介绍
 基于.net实现的m3u8.sqlite文件转视频工具。
 虽然已有另一个python开源版本，但是对python不熟悉的朋友操作不是很友好。
