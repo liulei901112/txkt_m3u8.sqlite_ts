@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Windows;
+using System.Windows.Media;
 using txkt_m3u8.sqlite_ts.Util;
 using txkt_m3u8.sqlite_ts.ViewModel;
 
@@ -28,6 +29,9 @@ namespace txkt_m3u8.sqlite_ts
         /// 数据模型
         /// </summary>
         private MainViewModel _viewModel = new MainViewModel();
+        // 任务执行标记
+        private volatile bool _running = false;
+        private volatile object _locker = new object();
 
         public MainWindow()
         {
@@ -113,6 +117,21 @@ namespace txkt_m3u8.sqlite_ts
             }
 
             Task.Run(() => {
+                if (_running)
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageCore.ShowError("任务执行中！");
+                    });
+                    return;
+                }
+                _running = true;
+                Dispatcher.InvokeAsync(() =>
+                {
+                    BeginConvert.Content = "文件转换中";
+                    BeginConvert.Background = Brushes.Green;
+                });
+
                 // 遍历文件
                 int index = 1;
                 int total = filePaths.Length;
@@ -151,7 +170,21 @@ namespace txkt_m3u8.sqlite_ts
                         });
                     }
                     index++;
+                    if (index > total)
+                    {
+                        ShowStatus("任务完成！总数：" + total);
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            MessageCore.ShowSuccess("任务完成！");
+                        });
+                    }
                 }
+                _running = false;
+                Dispatcher.InvokeAsync(() =>
+                {
+                    BeginConvert.Content = "开始转换";
+                    BeginConvert.Background = Brushes.Red;
+                });
             });
         }
 
