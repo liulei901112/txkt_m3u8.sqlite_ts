@@ -1,6 +1,10 @@
 # m3u8.sqlite文件转视频工具.net wpf版本
 
-## 提示：发行版zip包在[gitee](https://gitee.com/liulei901112/txkt_m3u8.sqlite_ts)下，[github](https://github.com/liulei901112/txkt_m3u8.sqlite_ts)只是同步了代码
+## 发行版zip包在[gitee](https://gitee.com/liulei901112/txkt_m3u8.sqlite_ts)下，[github](https://github.com/liulei901112/txkt_m3u8.sqlite_ts)只是同步了代码
+
+## <font color="red">New Tips</font>
+<font color="drak">很多小伙伴反馈新版本的无法解码（日志提示：file is not a database），代码仓库提供6.3.5.3版本的apk下载。这个版本的app下载的文件是可以解码的。并且兼容多账号合并后的课程浏览问题（比如：手机号登陆、微信、QQ登陆场景，再之前的版本就不支持了）。再后边的版本我就没做测试了</font>
+
 #### 软件介绍
 基于.net实现的m3u8.sqlite文件转视频工具。
 虽然已有另一个python开源版本，但是对python不熟悉的朋友操作不是很友好。
@@ -50,5 +54,5 @@
    * 方案2：可以把文件放入新文件夹，压缩后传输。感谢@cz777。也可采用方案1重新下载
 2. 提示文件损坏（file is not a database -> 不是一个数据库文件）
    * 原因：新版的app下载的文件数据加密了，无法解析。
-   * 方案：下载发行版附件：txkt_6.1.0.138.apk，也可以使用仓库中的apk。（我个人使用的这个版本，是可以正常解码的）
+   * 方案：下载发行版附件：txkt_6.3.5.3.apk，也可以使用仓库中的apk。（我个人使用的这个版本，是可以正常解码的）
 3. 其他问题：可以在仓库或您看到的文章下留言（也可以wx：liulei901112，mail：liulei901112@163.com），我看到会回复您的，分析问题，尽力解决问
