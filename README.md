@@ -42,8 +42,8 @@
 2. 选择解码后的ts文件输出文件夹（目标文件夹）
 3. 点击“开始转换”按钮，等待转换结束吧
 
-#### 参与贡献
-1. [tencent-edu-wrapper](https://github.com/r00t1900/tencent-edu-wrapper)
+#### 参考项目
+[tencent-edu-wrapper](https://github.com/r00t1900/tencent-edu-wrapper)
 
 #### 仓库地址
 * [github](https://github.com/liulei901112/txkt_m3u8.sqlite_ts)
