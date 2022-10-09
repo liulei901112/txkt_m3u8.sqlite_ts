@@ -1,4 +1,5 @@
 ﻿using log4net;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -116,7 +117,8 @@ namespace txkt_m3u8.sqlite_ts
                 return;
             }
 
-            Task.Run(() => {
+            Task.Run(() =>
+            {
                 if (_running)
                 {
                     Dispatcher.InvokeAsync(() =>
@@ -138,11 +140,14 @@ namespace txkt_m3u8.sqlite_ts
 
                 // 初始化进度条总数
                 RefreshProgress(ProgressType.总进度, 0, total);
-                ShowStatus("扫描文件。总数：" + total);
+                ShowStatus("扫描文件。总数：" + total);                
 
                 foreach (string filePath in filePaths)
                 {
                     log.Info(filePath);
+
+                    // 【重要】检查是否有新版本下载的文件，进行修正
+                    CheckAndCorrect(filePath);
 
                     try
                     {
@@ -163,7 +168,7 @@ namespace txkt_m3u8.sqlite_ts
                     }
                     catch (Exception ex)
                     {
-                        log.Error("文件损坏 => " + filePath+ "，" + ex.Message, ex);
+                        log.Error("文件损坏 => " + filePath + "，" + ex.Message, ex);
                         Dispatcher.InvokeAsync(() =>
                         {
                             MessageCore.ShowError("文件损坏 => " + Path.GetFileName(filePath));
@@ -502,6 +507,7 @@ namespace txkt_m3u8.sqlite_ts
             log.Info(fileName + "文件解码完成，耗时：" + (DateTime.Now - beginTime).TotalMilliseconds + "ms");
         }
 
+
         /// <summary>
         /// 获取一个元数据
         /// </summary>
@@ -528,6 +534,7 @@ namespace txkt_m3u8.sqlite_ts
                     log.Error("metadata 不存在 => " + filePath);
                     return null;
                 }
+
                 string metadata = metadatas[0][0].ToString();
                 Extend extend = ExtractFromMetadata(metadata);
                 string uin = extend.Tokens["uin"];
@@ -543,6 +550,83 @@ namespace txkt_m3u8.sqlite_ts
                 log.Info(result);
                 return result;
             }
+        }
+
+        /// <summary>
+        /// 检查并修正文件
+        /// </summary>
+        /// <param name="filePath"></param>
+        private void CheckAndCorrect(string filePath)
+        {
+            ShowStatus("检查是否错误 => " + filePath);
+            List<object[]> metadatas = null;
+            SQLite sqlite = new SQLite(filePath);
+            try
+            {
+                metadatas = sqlite.GetRows("metadata", "value");
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    sqlite.Dispose();
+                }
+                catch { }
+                // 判断是否是 file is not a database
+                if (ex.Message.Contains("file is not a database"))
+                {
+                    log.Info("修正文件 => " + filePath);
+                    // 修正文件
+                    using (FileStream fs = File.OpenWrite(filePath))
+                    {
+                        // 获取新的文件头
+                        byte[] sqlte_format3_bs = SqliteFormat3(fs);
+                        fs.Seek(0, SeekOrigin.Begin);
+                        // 重写
+                        fs.Write(sqlte_format3_bs, 0, sqlte_format3_bs.Length);
+                    }
+                    log.Info("修正结束 => " + filePath);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    sqlite.Dispose();
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// sqlite文件头
+        /// </summary>
+        /// <param name="fs"></param>
+        /// <returns></returns>
+        private byte[] SqliteFormat3(FileStream fs)
+        {
+            string hex = "53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00 10 00 01 01 00 40 20 20 00 00 00 80 00 00 00 00 00 00 00 06 00 00 00 07 00 00 00 02 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 2E 28 6B 0D 0F F8 00 04 0E F4 00 0F 71 0F C7 0E F4 0F 44 00 00 00 00 00 00 00 00 00 00 00 00";
+            List<byte> bl = new List<byte>();
+            foreach (var s in hex.Split(' '))
+            {
+                // 将十六进制的字符串转换成数值  
+                bl.Add(Convert.ToByte(s, 16));
+            }
+            byte[] bytes = bl.ToArray();
+            // 获取文件大小
+            long len = fs.Length * 2;
+            // 转成16进制
+            string lh = Convert.ToString(len, 16);
+            string[] lha = Regex.Split(lh, @"(?<=\G.{2})(?!$)");
+            // 倒叙
+            Array.Reverse(lha);
+            // 回写byte数组
+            for(int i = 0; i < lha.Length; i++)
+            {
+                bytes[28 + i] = Convert.ToByte(lha[i], 16);
+            }
+            // 返回字节数组          
+            return bytes;
         }
 
         /// <summary>
@@ -810,7 +894,7 @@ namespace txkt_m3u8.sqlite_ts
                 }
                 else
                 {
-                    throw new Exception("db数据库不存在:" + path);
+                    throw new Exception("数据库不存在:" + path);
                 }
             }
             // region IsExists        

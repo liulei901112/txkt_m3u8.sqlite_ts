@@ -14,7 +14,7 @@ namespace txkt_m3u8.sqlite_ts.ViewModel
             model = new MainModel()
             {
 #if DEBUG
-                SourceFolder = "D:\\TTS",
+                SourceFolder = "D:\\TXEDU_TEST",
 #endif
                 TargetFolder = ".",
 
