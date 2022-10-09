@@ -284,10 +284,7 @@ namespace txkt_m3u8.sqlite_ts
                 _aesKeyList = new List<byte[]>();
                 RefreshProgress(ProgressType.当前进度, 0, total * 2);
 
-                /*List<long[]> tsIndex = new List<long[]>();
-                List<byte[]> aesKeys = new List<byte[]>();*/
-
-                // cache表数据全局缓存，但是文件大于2g会出现oom。
+                // 【cache】cache表数据全局缓存，但是文件大于2g会出现oom。
                 // List<object[]> caches = new List<object[]>(); 
                 if (total > 0)
                 {
@@ -299,6 +296,7 @@ namespace txkt_m3u8.sqlite_ts
                         {
                             string pageLimit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
                             List<object[]> subCaches = sqlite.GetRows(cachesTableName, "*", pageLimit);
+                            // 【cache】文件cache表全部缓存记录
                             // caches.AddRange(subCaches);
                             foreach (object[] cache in subCaches)
                             {
@@ -318,53 +316,6 @@ namespace txkt_m3u8.sqlite_ts
                         resetEvent.WaitAll();
                     }
                 }
-
-                /*int pageSize = 100;
-                int totalPage = (total + pageSize - 1) / pageSize;
-                
-
-                for (int i = 1; i <= totalPage; i++)
-                {
-                    string pageLimit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
-                    List<object[]> caches = sqlite.GetRows(cachesTableName, "*", pageLimit);
-                    foreach (object[] cache in caches)
-                    {
-                        try
-                        {
-                            string key = cache[0].ToString();
-                            object value = cache[1];
-
-                            Extend keyExtend = ExtractFromMetadata(key);
-                            string[] keyQueriesExtendKeys = keyExtend.Queries.Keys.ToArray();
-
-                            if (Encoding.UTF8.GetString(value as byte[]).Contains("#EXTM3U"))
-                            { }
-                            else if (keyQueriesExtendKeys.Contains("edk"))
-                            {
-                                aesKeys.Add(value as byte[]);
-                                string hex = ToHexString(value as byte[]);
-                                log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
-                            }
-                            else
-                            {
-                                long start = long.Parse(keyExtend.Queries["start"]);
-                                long end = long.Parse(keyExtend.Queries["end"]);
-                                tsIndex.Add(new long[] { index - 1, start, end });
-                            }
-
-                            RefreshProgress(ProgressType.当前进度, index, total * 2);
-                            msg = string.Format("解码进度 [{0} / {1}] => {2}", index, total, fileName);
-                            ShowStatus(msg);
-                            log.Info(msg + "," + key.Substring(key.IndexOf("?")));
-                        }
-                        finally
-                        {
-                            Interlocked.Increment(ref index);
-                        }
-                    }
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                }*/
 
                 // 重新排序（最快）
                 DateTime t0 = DateTime.Now;
@@ -440,7 +391,7 @@ namespace txkt_m3u8.sqlite_ts
                             // 从数据库获取数据
                             List<object[]> cacheOne = sqlite.GetRows(cachesTableName, "*", limit); 
                             raw = cacheOne[0][1];
-                            // 使用全局缓存加速的同时无法兼容文件大于2g时导致的oom，所以改为使用时读取
+                            // 【cache】使用全局缓存加速的同时无法兼容文件大于2g时导致的oom，所以改为使用时读取
                             // raw = caches[((int)tsOne[0])][1];
                             if (null == raw || (raw as byte[]).Length <= 0)
                             {
@@ -462,46 +413,6 @@ namespace txkt_m3u8.sqlite_ts
                         }
                     }
                 }
-
-                /*List<object[]> cacheOne;
-                string limit;
-                object raw;
-                byte[] chip;
-                // 合并片段
-                foreach (long[] tsOne in orderedTsIndex)
-                {
-                    limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
-                    cacheOne = sqlite.GetRows(cachesTableName, "*", limit);
-                    raw = cacheOne[0][1];
-                    chip= AESDecrypt(raw as byte[], aesKeys[0]);
-                    plain.AddRange(chip);
-                    orderIndex += 1;
-
-                    RefreshProgress(ProgressType.当前进度, index, total + orderTotal);
-                    msg = string.Format("合并进度 [{0} / {1}] => {2}", orderIndex, orderTotal, fileName);
-                    ShowStatus(msg);
-                    log.Info(msg);
-                    index++;
-                }
-
-                // 保存文件
-                string sourceFolder = SourceFolder.Text.Trim();
-                string targetFolder = TargetFolder.Text.Trim();
-                if (".".Equals(targetFolder))
-                {
-                    targetFolder = sourceFolder;
-                }
-                if (Directory.Exists(targetFolder))
-                {
-                    Directory.CreateDirectory(targetFolder);
-                }
-                string targetFileName = fileName.Replace(".m3u8.sqlite", ".ts");
-                string targetFilePath = Path.Combine(targetFolder, targetFileName);
-
-                using (FileStream fs = new FileStream(targetFilePath, FileMode.OpenOrCreate, FileAccess.Write))
-                {
-                    fs.Write(plain.ToArray(), 0, plain.Count);
-                }*/
 
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
@@ -581,10 +492,10 @@ namespace txkt_m3u8.sqlite_ts
                     using (FileStream fs = File.OpenWrite(filePath))
                     {
                         // 获取新的文件头
-                        byte[] sqlte_format3_bs = SqliteFormat3(fs);
+                        byte[] fileHead = BuildNewFileHead(fs);
                         fs.Seek(0, SeekOrigin.Begin);
                         // 重写
-                        fs.Write(sqlte_format3_bs, 0, sqlte_format3_bs.Length);
+                        fs.Write(fileHead, 0, fileHead.Length);
                     }
                     log.Info("修正结束 => " + filePath);
                 }
@@ -599,14 +510,17 @@ namespace txkt_m3u8.sqlite_ts
             }
         }
 
+        /// <summary>
+        /// sqlite3数据库文件，文件头信息模板，用于修正file is a not database文件时使用
+        /// </summary>
         private const string SQLITE_FORMAT3_HEX = "53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00 10 00 01 01 00 40 20 20 00 00 00 80 00 00 00 00 00 00 00 06 00 00 00 07 00 00 00 02 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 2E 28 6B 0D 0F F8 00 04 0E F4 00 0F 71 0F C7 0E F4 0F 44 00 00 00 00 00 00 00 00 00 00 00 00";
 
         /// <summary>
-        /// sqlite文件头
+        /// 构建新的文件头
         /// </summary>
         /// <param name="fs"></param>
         /// <returns></returns>
-        private byte[] SqliteFormat3(FileStream fs)
+        private byte[] BuildNewFileHead(FileStream fs)
         {
             List<byte> bl = new List<byte>();
             foreach (var s in SQLITE_FORMAT3_HEX.Split(' '))
