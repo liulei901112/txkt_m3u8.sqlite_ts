@@ -1206,5 +1206,25 @@ namespace txkt_m3u8.sqlite_ts
             }
         }
         #endregion
+
+        /// <summary>
+        /// 帮助
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void Help_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var win = HelpWindow.CreateInstance();
+            if (!win.IsVisible)
+            {
+                win.Topmost = true;
+                win.Owner = Application.Current.MainWindow;
+                win.ShowDialog();
+            }
+            else
+            {
+                win.Activate();
+            }
+        }
     }
 }
