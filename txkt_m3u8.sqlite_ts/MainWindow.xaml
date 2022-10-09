@@ -39,6 +39,9 @@
             </Grid>
         </StackPanel>
 
+        <!-- 帮助 -->
+        <Label x:Name="Help" Content="?" ToolTip="如需帮助，请联系我。" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,30" MouseUp="Help_MouseUp"/>
+
         <Grid Margin="0,10,0,0" VerticalAlignment="Bottom" Background="#2196f3">
             <Label Content="{Binding WorkStatus}" Foreground="White"/>
         </Grid>
