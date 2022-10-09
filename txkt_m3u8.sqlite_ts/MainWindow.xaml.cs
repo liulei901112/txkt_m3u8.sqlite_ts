@@ -1,5 +1,4 @@
 ﻿using log4net;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -30,9 +29,10 @@ namespace txkt_m3u8.sqlite_ts
         /// 数据模型
         /// </summary>
         private MainViewModel _viewModel = new MainViewModel();
-        // 任务执行标记
+        /// <summary>
+        /// 任务执行标记
+        /// </summary>
         private volatile bool _running = false;
-        private volatile object _locker = new object();
 
         public MainWindow()
         {
@@ -225,9 +225,9 @@ namespace txkt_m3u8.sqlite_ts
                 { }
                 else if (keyQueriesExtendKeys.Contains("edk"))
                 {
-                    lock(AesKeysLock)
+                    lock(_aesKeysLocker)
                     {
-                        AesKeys.Add(value as byte[]);
+                        _aesKeyList.Add(value as byte[]);
                     }
                     string hex = ToHexString(value as byte[]);
                     log.Info(string.Format("[KEY]：{0}, length：{1}", hex, hex.Length));
@@ -236,9 +236,9 @@ namespace txkt_m3u8.sqlite_ts
                 {
                     long start = long.Parse(keyExtend.Queries["start"]);
                     long end = long.Parse(keyExtend.Queries["end"]);
-                    lock(TsIndexLock)
+                    lock(_tsIndexLocker)
                     {
-                        TsIndex.Add(new long[] { taskInfo.Index - 1, start, end });
+                        _tsIndexList.Add(new long[] { taskInfo.Index - 1, start, end });
                     }
                 }
 
@@ -255,11 +255,11 @@ namespace txkt_m3u8.sqlite_ts
         }
 
         // 锁
-        private object TsIndexLock = new object();
-        private object AesKeysLock = new object();
+        private object _tsIndexLocker = new object();
+        private object _aesKeysLocker = new object();
         // 数据列表
-        private List<long[]> TsIndex = new List<long[]>();
-        private List<byte[]> AesKeys = new List<byte[]>();
+        private List<long[]> _tsIndexList = new List<long[]>();
+        private List<byte[]> _aesKeyList = new List<byte[]>();
 
         /// <summary>
         /// 获取一个ts
@@ -280,14 +280,15 @@ namespace txkt_m3u8.sqlite_ts
                 string cachesTableName = "caches";
                 int total = sqlite.GetRowsCount(cachesTableName);
                 int index = 1;
-                TsIndex = new List<long[]>();
-                AesKeys = new List<byte[]>();
+                _tsIndexList = new List<long[]>();
+                _aesKeyList = new List<byte[]>();
                 RefreshProgress(ProgressType.当前进度, 0, total * 2);
 
                 /*List<long[]> tsIndex = new List<long[]>();
                 List<byte[]> aesKeys = new List<byte[]>();*/
 
-                List<object[]> caches = new List<object[]>(); //sqlite.GetRows(cachesTableName, "*");
+                // cache表数据全局缓存，但是文件大于2g会出现oom。
+                // List<object[]> caches = new List<object[]>(); 
                 if (total > 0)
                 {
                     using (MutipleThreadResetEvent resetEvent = new MutipleThreadResetEvent(total))
@@ -298,7 +299,7 @@ namespace txkt_m3u8.sqlite_ts
                         {
                             string pageLimit = string.Format("LIMIT {0}, {1}", (i - 1) * pageSize, pageSize);
                             List<object[]> subCaches = sqlite.GetRows(cachesTableName, "*", pageLimit);
-                            caches.AddRange(subCaches);
+                            // caches.AddRange(subCaches);
                             foreach (object[] cache in subCaches)
                             {
                                 // 加入线程池
@@ -367,26 +368,26 @@ namespace txkt_m3u8.sqlite_ts
 
                 // 重新排序（最快）
                 DateTime t0 = DateTime.Now;
-                TsIndex.Sort((a, b) => { return a[1].CompareTo(b[1]); });
+                _tsIndexList.Sort((a, b) => { return a[1].CompareTo(b[1]); });
                 log.Debug((DateTime.Now - t0).TotalMilliseconds);
                 
                 /*// 相对慢
                 DateTime t1 = DateTime.Now;
-                TsIndex = TsIndex.OrderBy(x => x[1]).ToList();
+                _tsIndexList = _tsIndexList.OrderBy(x => x[1]).ToList();
                 log.Debug((DateTime.Now - t1).TotalMilliseconds);
 
                 // 最慢
                 DateTime t2 = DateTime.Now;
                 long matchTime = -1;
                 List<long[]> orderedTsIndex = new List<long[]>();
-                for (int x = 0; x < TsIndex.Count; x++)
+                for (int x = 0; x < _tsIndexList.Count; x++)
                 {
-                    for (int y = 0; y < TsIndex.Count; y++)
+                    for (int y = 0; y < _tsIndexList.Count; y++)
                     {
-                        if (TsIndex[y][1] == matchTime + 1)
+                        if (_tsIndexList[y][1] == matchTime + 1)
                         {
-                            orderedTsIndex.Add(TsIndex[y]);
-                            matchTime = TsIndex[y][2];
+                            orderedTsIndex.Add(_tsIndexList[y]);
+                            matchTime = _tsIndexList[y][2];
                         }
                     }
                 }                
@@ -423,13 +424,13 @@ namespace txkt_m3u8.sqlite_ts
                 using (FileStream fs = new FileStream(targetFilePath, FileMode.OpenOrCreate, FileAccess.Write))
                 {
                     int orderIndex = 0;
-                    int orderTotal = TsIndex.Count;
+                    int orderTotal = _tsIndexList.Count;
 
                     string limit;
                     object raw;
                     byte[] chip;
                     // 合并片段
-                    foreach (long[] tsOne in TsIndex)
+                    foreach (long[] tsOne in _tsIndexList)
                     {
                         try
                         {
@@ -437,15 +438,16 @@ namespace txkt_m3u8.sqlite_ts
                             // log.Info(tp);
                             limit = string.Format("LIMIT {0}, {1}", tsOne[0], 1);
                             // 从数据库获取数据
-                            // List<object[]> cacheOne = sqlite.GetRows(cachesTableName, "*", limit); 
-                            // raw = cacheOne[0][1];
-                            raw = caches[((int)tsOne[0])][1];
+                            List<object[]> cacheOne = sqlite.GetRows(cachesTableName, "*", limit); 
+                            raw = cacheOne[0][1];
+                            // 使用全局缓存加速的同时无法兼容文件大于2g时导致的oom，所以改为使用时读取
+                            // raw = caches[((int)tsOne[0])][1];
                             if (null == raw || (raw as byte[]).Length <= 0)
                             {
                                 log.Error("raw数据为空，" + tp);
                                 continue;
                             }
-                            chip = AESDecrypt(raw as byte[], AesKeys[0]);
+                            chip = AESDecrypt(raw as byte[], _aesKeyList[0]);
                             fs.Write(chip, 0, chip.Length);
                             orderIndex += 1;
 
@@ -559,11 +561,10 @@ namespace txkt_m3u8.sqlite_ts
         private void CheckAndCorrect(string filePath)
         {
             ShowStatus("检查是否错误 => " + filePath);
-            List<object[]> metadatas = null;
             SQLite sqlite = new SQLite(filePath);
             try
             {
-                metadatas = sqlite.GetRows("metadata", "value");
+                sqlite.GetRows("metadata", "value");
             }
             catch (Exception ex)
             {
@@ -598,6 +599,8 @@ namespace txkt_m3u8.sqlite_ts
             }
         }
 
+        private const string SQLITE_FORMAT3_HEX = "53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00 10 00 01 01 00 40 20 20 00 00 00 80 00 00 00 00 00 00 00 06 00 00 00 07 00 00 00 02 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 2E 28 6B 0D 0F F8 00 04 0E F4 00 0F 71 0F C7 0E F4 0F 44 00 00 00 00 00 00 00 00 00 00 00 00";
+
         /// <summary>
         /// sqlite文件头
         /// </summary>
@@ -605,9 +608,8 @@ namespace txkt_m3u8.sqlite_ts
         /// <returns></returns>
         private byte[] SqliteFormat3(FileStream fs)
         {
-            string hex = "53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00 10 00 01 01 00 40 20 20 00 00 00 80 00 00 00 00 00 00 00 06 00 00 00 07 00 00 00 02 00 00 00 04 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 2E 28 6B 0D 0F F8 00 04 0E F4 00 0F 71 0F C7 0E F4 0F 44 00 00 00 00 00 00 00 00 00 00 00 00";
             List<byte> bl = new List<byte>();
-            foreach (var s in hex.Split(' '))
+            foreach (var s in SQLITE_FORMAT3_HEX.Split(' '))
             {
                 // 将十六进制的字符串转换成数值  
                 bl.Add(Convert.ToByte(s, 16));
