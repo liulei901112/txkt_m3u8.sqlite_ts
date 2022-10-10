@@ -2,8 +2,8 @@
 
 ## 发行版zip包在[gitee](https://gitee.com/liulei901112/txkt_m3u8.sqlite_ts)下，[github](https://github.com/liulei901112/txkt_m3u8.sqlite_ts)只是同步了代码
 
-## <font color="red">New Tips</font>
-<font color="drak">很多小伙伴反馈新版本的无法解码（日志提示：file is not a database），代码仓库提供6.3.5.3版本的apk下载。这个版本的app下载的文件是可以解码的。并且兼容多账号合并后的课程浏览问题（比如：手机号登陆、微信、QQ登陆场景，再之前的版本就不支持了）。再后边的版本我就没做测试了</font>
+## New Tips
+单文件大于2G会出现OOM的问题已修复，最新版App下载的文件无法解码提示“file is a not database”问题已修复。
 
 #### 软件介绍
 基于.net实现的m3u8.sqlite文件转视频工具。
