@@ -247,6 +247,10 @@ namespace txkt_m3u8.sqlite_ts
                 ShowStatus(msg);
                 log.Info(msg + "," + key.Substring(key.IndexOf("?")));
             }
+            catch (Exception ex)
+            {
+                log.Error(ex.Message, ex);
+            }
             finally
             {
                 // Interlocked.Increment(ref index);
